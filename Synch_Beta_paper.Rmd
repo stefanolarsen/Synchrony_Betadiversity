@@ -1,0 +1,46 @@
+---
+title: "Synch_Beta_paper"
+output: html_document
+date: "2024-06-03"
+---
+
+Include here the cleaned up versions of the different scripts, following the paper in preparation
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width = 5)
+```
+
+```{r}
+theme_set(theme_bw())
+```
+
+```{r}
+install.packages('tidyverse')
+library(tidyverse)
+library(ggplot2)
+install.packages('iCAMP')
+library(iCAMP)
+install.packages('reshape2')
+library(reshape2)
+install.packages('gtools')
+library(gtools)
+library(data.table)
+#library(cluster)
+library(vegan)
+install.packages('ecodist')
+library(ecodist)
+library(mFD)
+install.packages('betapart')
+library(betapart)
+library(readr)
+
+install.packages('nlstools')
+library(nlstools)
+
+
+```
+
+
+
+
