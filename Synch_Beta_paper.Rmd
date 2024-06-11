@@ -15,6 +15,7 @@ knitr::opts_chunk$set(echo = TRUE, fig.width = 5)
 theme_set(theme_bw())
 ```
 
+install some packages
 ```{r}
 install.packages('tidyverse')
 library(tidyverse)
@@ -39,8 +40,1113 @@ install.packages('nlstools')
 library(nlstools)
 
 
+
 ```
 
 
+install the multimembership pack
+```{r}
+if(!require(devtools)){
+    install.packages("devtools")
+    library("devtools")
+}
+
+install_github("jvparidon/lmerMultiMember")
+```
+
+# load additional package asscoiated with multimember
+```{r}
+install.packages('lmerTest')
+library(lmerTest) ## from Luke et al 2016 - evaluating significance in linear mixed-effects models in R
+library(lme4)
+install.packages('sjstats')
+library(sjstats) #use for r2 functions
+install.packages('performance')
+library(performance) ## for ICC
+install.packages('sjPlot')
+library(sjPlot) #for plotting lmer and glmer mods
+
+install.packages('glmmTMB')
+library(glmmTMB)
+```
+
+
+
+
+# *import some datasets previously created* 
+
+# import the ELE data (from EcolLett paper )
+```{r}
+#library(readr)
+setwd("~/Documents/SynGeo")
+ELE_data <- read_csv("ELE_synchrograms.datamat.csv")
+```
+
+#import the grouped table with multiple data for each (nested) basin.
+here is where the pairwise betadiversity is also stored
+```{r}
+basins_grp_tbl=
+readRDS('basins_grp_table.rds')
+```
+
+# import the 'synchrony_spp'dataframe (for each pair of species'population)
+```{r}
+
+#synchrony_spp<- read.csv('synchrony_spp.csv')
+```
+
+
+# this is to extract the 3cols from the pairwise BC based on the mean (across time) composition. 
+To repeat for each basin.
+```{r}
+#basins_grp_tbl$mean.composit[[1]]
+dist.3col(basins_grp_tbl$pairwise_bray[[1]])
+```
+
+# run this for each basin to extract the mean pairwise BC
+```{r}
+
+list1=list()
+
+for (bas in 1: nrow(basins_grp_tbl)){
+list1[[bas]]=iCAMP::dist.3col(basins_grp_tbl$pairwise_bray[[bas]])
+}
+      
+```
+
+#extract the pairwise BC for each site pairs and basin
+```{r}
+pairwiseBC=do.call(rbind, list1)
+pairwiseBC$site_pair=paste(pairwiseBC$name1, pairwiseBC$name2, sep="_")
+```
+
+#add info on spatial BC (taxonomic) in the synchrony_spp long df
+```{r}
+synchrony_spp$mean_pair_BC=
+  pairwiseBC$dis[match(synchrony_spp$sitepairs1, pairwiseBC$site_pair)]
+```
+
+
+# add the mean spatial BC between sites (within basin) based on mean (across time) composition
+
+```{r}
+ELE_data$pair_BC=
+  synchrony_spp$mean_pair_BC[match(ELE_data$sitepairs1, synchrony_spp$sitepairs1)]
+```
+
+
+# See that mean decay of similarity follows the same patterns of decay in pop synchrony
+
+```{r fig.width=5.5}
+ELE_data %>% 
+  filter(Ntw_dist<800) %>% 
+  ggplot()+ theme_bw()+
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank(), axis.title = element_text(size=20))+
+  aes(sqrt(Ntw_dist), (1-pair_BC))+geom_smooth(method = 'nls', formula = y ~ a*exp(b *x), se = FALSE, method.args= list(start =c(a=0.1,b=0.1)), col='#464BB4')+
+  
+  geom_smooth(data=ELE_data , aes(sqrt(Eucl_dist), (1-pair_BC)), col='Goldenrod2', method = 'nls', formula = y ~ a*exp(b *x), se = FALSE, method.args= list(start =c(a=0.1,b=0.1)), linetype='dotdash')+
+  geom_smooth(data=ELE_data %>% filter(flow_connect==1), aes(sqrt(Ntw_dist), (1-pair_BC)), col='#CD3F87', method = 'nls', formula = y ~ a*exp(b *x), se = FALSE, method.args= list(start =c(a=0.1,b=0.1)), linetype='dashed')+
+  ylab('Similarity [1-BC]')+xlab(~'Distance'(sqrt(km)))+
+  
+  geom_segment(aes(x=17, xend=20, y=0.6, yend=0.6), col='#CD3F87', linetype='dashed', size=0.6)+
+  geom_segment(aes(x=17, xend=20, y=0.57, yend=0.57), col='#464BB4', size=0.6)+
+  geom_segment(aes(x=17, xend=20, y=0.54, yend=0.54), col='Goldenrod2', linetype='dotdash', size=0.6)+
+  annotate("text", x=24, y=0.6, label="Flow-connected", col="#CD3F87", size=5 )+
+  annotate("text", x=24, y=0.57, label="Watercourse", col="#464BB4", size=5 )+
+  annotate("text", x=24, y=0.54, label="Euclidean", col="Goldenrod2", size=5 )
+```
+
+NOTES for me
+...add here the multimemebership models (must run them again...)
+.. for the envdist, I must upload the import code of katies T, and Q data (from SynchBeta_clean.rmd)
+
+
+##################################
+#*import mean air T timeseries, from Katies*
+```{r}
+library(readr)
+Sites_tmean_av <- read_csv("KatieClimateData/Sites_tmean_av_new_sites.csv")
+```
+
+#are the actual syncgeo sites there?
+```{r}
+setdiff(TableSites$sYNGEO_ID, Sites_tmean_av$SiteID)
+```
+
+# Work on the *mean Air temp data* - select years mathcin the biotic data
+```{r}
+#make it long
+Sites_tmean_av_long=
+Sites_tmean_av %>% 
+  pivot_longer(-1, names_to = 'year') 
+
+#remove the X in front of year
+Sites_tmean_av_long$year=
+  str_replace( Sites_tmean_av_long$year, 'X', '')
+ 
+# Join with the tableSites df
+Sites_tmean_av_long=
+Sites_tmean_av_long %>% 
+  left_join(TableSites[,c(1,2,3)], join_by(SiteID == sYNGEO_ID))
+
+#convert year to numeric
+Sites_tmean_av_long$year=as.numeric(Sites_tmean_av_long$year)
+
+
+# Selection of same time windows as for the bio data
+Sites_tmean_av_long=
+Sites_tmean_av_long %>% 
+  mutate(Sel=ifelse(year < begin  | year > end, 'NO', 'Yes'))
+
+Sites_tmean_av_long=
+  Sites_tmean_av_long %>% 
+  filter(Sel == 'Yes')
+
+```
+
+# Now add the Basin ID to the temp mean df
+```{r}
+Sites_tmean_av_long$BasinID=
+  TableSites$MAIN_BAS[match(Sites_tmean_av_long$SiteID, TableSites$sYNGEO_ID)]
+```
+
+# to get the mean airT values...
+```{r}
+Sites_tmean_av_long %>% 
+  group_by(SiteID) %>% 
+  summarise (meanT=mean(value))
+```
+
+
+# Nest within Basin to run synchrony across sites within basin 
+```{r}
+Sites_tmean.nest=
+Sites_tmean_av_long %>% 
+  group_by(BasinID) %>% nest()
+
+# the process to get site synchrony in env data (here T) - this will become a function below
+tmp$data[[1]] %>% 
+  select(SiteID, year, value) %>% pivot_wider(values_from = value, names_from = SiteID) %>% 
+  select(-year) %>% 
+  cor() %>% as.dist() %>% iCAMP::dist.3col()
+
+```
+
+# *Function to get env. data synchrony within basin*
+```{r}
+env.synch=
+  function(df){
+    df %>% select(SiteID, year, value) %>% 
+      pivot_wider(values_from = value, names_from = SiteID) %>% 
+      select(-year) %>% 
+      cor(use="pairwise.complete.obs") %>% as.dist() %>% iCAMP::dist.3col()
+  }
+```
+
+# Run the function. Get pairwise Tmean synchrony across sites, within basin
+```{r}
+Sites_tmean.nest=
+Sites_tmean.nest %>% 
+  mutate(tmean.synch= map(data, env.synch))
+
+Sites_tmean.nest$tmean.synch[[1]]
+```
+# Unlist the nested list, create the T mean synchonry long df
+```{r}
+Tmean_synch=
+rbindlist(Sites_tmean.nest$tmean.synch)
+
+#add site pair info (to match with other synchrony pairwise data)
+Tmean_synch$site_pair=
+  paste(Tmean_synch$name1, Tmean_synch$name2, sep="_")
+```
+
+```{r}
+Tmean_synch %>% filter(name2==147)
+```
+
+
+
+## Add the mean Air T synchrony to the *synchrony_spp data*
+```{r}
+#add the site pairs in both orders
+synchrony_spp$Tmean_synchrony1=
+  Tmean_synch$dis[match(synchrony_spp$sitepairs1, Tmean_synch$site_pair)]
+
+synchrony_spp$Tmean_synchrony2=
+  Tmean_synch$dis[match(synchrony_spp$sitepairs2, Tmean_synch$site_pair)]
+
+# then combine the site pair orders to make sure each pairs are covered
+synchrony_spp$Tmean_synchrony=
+ifelse(is.na(synchrony_spp$Tmean_synchrony1), synchrony_spp$Tmean_synchrony2, synchrony_spp$Tmean_synchrony1)
+
+#remove the partial matches
+synchrony_spp$Tmean_synchrony1=NULL
+synchrony_spp$Tmean_synchrony2=NULL
+```
+
+#*Add the flow connected info into the synchrony_spp*
+```{r}
+synchrony_spp$flow_conn=
+  ELE_data$flow_connect[match( synchrony_spp$sitepairs1, ELE_data$sitepairs1)]
+```
+
+
+# Plot decay of Moran Temp
+```{r}
+synchrony_spp %>% 
+  ggplot()+aes(sqrt(dist_ntw) , Tmean_synchrony)+geom_smooth()+
+  geom_smooth(data=synchrony_spp, aes(sqrt(Eucl_dist), Tmean_synchrony), col='Goldenrod2' )+
+  geom_smooth(data=synchrony_spp %>% filter(flow_conn==1), aes(sqrt(dist_ntw), Tmean_synchrony), col='#CD3F87') +
+  annotate("text", x=5, y=0.7, label="Flow-connected", col="#CD3F87", size=5 )+
+  annotate("text", x=5, y=0.75, label="Watercourse", col="#464BB4", size=5 )+
+  annotate("text", x=5, y=0.8, label="Euclidean", col="Goldenrod2", size=5 )+
+  ylab('Mean air T synchrony')+ xlab('Distance sqrt(km)')
+
+
+
+synchrony_spp %>% 
+  ggplot()+aes((dist_ntw) , Tmean_synchrony)+geom_smooth()+
+  geom_smooth(data=synchrony_spp, aes((Eucl_dist), Tmean_synchrony), col='Goldenrod2' )+
+  geom_smooth(data=synchrony_spp %>% filter(flow_conn==1), aes((dist_ntw), Tmean_synchrony), col='#CD3F87')
+
+
+
+synchrony_spp %>% 
+  ggplot()+aes(sqrt(dist_ntw) , Tmean_synchrony)+geom_smooth(method='lm')+
+  geom_smooth(data=synchrony_spp, aes(sqrt(Eucl_dist), Tmean_synchrony), col='Goldenrod2' ,method='lm')+
+  geom_smooth(data=synchrony_spp %>% filter(flow_conn==1), aes(sqrt(dist_ntw), Tmean_synchrony), col='#CD3F87',method='lm')
+
+
+
+```
+
+
+
+####################################################
+#### Importing the streamflow data from Katie #####
+
+These are available as .RData file
+```{r}
+ load("~/Documents/SynGeo/Functional/KatieClimateData/flow_min_max_mean_extracted_new_sites_raw_V2.rdata")
+```
+check match with sites
+```{r}
+setdiff(TableSites$sYNGEO_ID, qmean$SiteID)
+```
+
+# Work on the *mean streamflow data* - select years mathcin the biotic data
+```{r}
+#make it long
+qmean_long=
+qmean %>% 
+  pivot_longer(-1, names_to = 'year') 
+
+#remove the X in front of year
+qmean_long$year=
+  str_replace( qmean_long$year, 'X', '')
+ 
+# Join with the tableSites df
+qmean_long=
+qmean_long %>% 
+  left_join(TableSites[,c(1,2,3)], join_by(SiteID == sYNGEO_ID))
+
+#convert year to numeric
+qmean_long$year=as.numeric(qmean_long$year)
+
+
+# Selection of same time windows as for the bio data
+qmean_long=
+qmean_long %>% 
+  mutate(Sel=ifelse(year < begin  | year > end, 'NO', 'Yes'))
+
+qmean_long=
+  qmean_long %>% 
+  filter(Sel == 'Yes')
+
+```
+
+
+
+# Now add the Basin ID to the temp mean df
+```{r}
+qmean_long$BasinID=
+  TableSites$MAIN_BAS[match(qmean_long$SiteID, TableSites$sYNGEO_ID)]
+```
+
+
+# Nest within Basin to run synchrony across sites within basin 
+```{r}
+qmean_nest=
+qmean_long %>% 
+  group_by(BasinID) %>% nest()
+
+# the process to get site synchrony in qmean - this will become a function below
+tmp$data[[1]] %>% 
+  select(SiteID, year, value) %>% pivot_wider(values_from = value, names_from = SiteID) %>% 
+  select(-year) %>% 
+  cor() %>% as.dist() %>% iCAMP::dist.3col()
+
+```
+
+# *Function to get env. data synchrony within basin*
+```{r}
+env.synch=
+  function(df){
+    df %>% select(SiteID, year, value) %>% 
+      pivot_wider(values_from = value, names_from = SiteID) %>% 
+      select(-year) %>% 
+      cor(use="pairwise.complete.obs") %>% as.dist() %>% iCAMP::dist.3col()
+  }
+```
+
+
+# Run the function. *Get pairwise qmean synchrony across sites, within basin*
+```{r}
+qmean_nest=
+qmean_nest %>% 
+  mutate(qmean.synch= map(data, env.synch))
+
+qmean_nest$qmean.synch[[1]]
+```
+
+
+# Unlist the nested list, create the T mean synchonry long df
+```{r}
+qmean_synch=
+rbindlist(qmean_nest$qmean.synch)
+
+#add site pair info (to match with other synchrony pairwise data)
+qmean_synch$site_pair=
+  paste(qmean_synch$name1, qmean_synch$name2, sep="_")
+```
+
+
+
+## Add the mean Q (streamflow) synchrony to the *synchrony_spp data*
+```{r}
+#add the site pairs in both orders
+synchrony_spp$qmean_synchrony1=
+  qmean_synch$dis[match(synchrony_spp$sitepairs1, qmean_synch$site_pair)]
+
+synchrony_spp$qmean_synchrony2=
+  Tmean_synch$dis[match(synchrony_spp$sitepairs2, qmean_synch$site_pair)]
+
+# then combine the site pair orders to make sure each pairs are covered
+synchrony_spp$qmean_synchrony=
+ifelse(is.na(synchrony_spp$qmean_synchrony1), synchrony_spp$qmean_synchrony2, synchrony_spp$qmean_synchrony1)
+
+#remove the partial matches
+synchrony_spp$qmean_synchrony1=NULL
+synchrony_spp$qmean_synchrony2=NULL
+```
+
+#compare distribution of streamflow and temperature synchrony values
+```{r}
+synchrony_spp
+
+hist(synchrony_spp$qmean_synchrony)
+
+hist(synchrony_spp$Tmean_synchrony)
+```
+
+# Plot the decay in streamflow synchrony vs distances
+```{r}
+synchrony_spp %>% 
+  ggplot()+aes(sqrt(dist_ntw) , qmean_synchrony)+geom_smooth()+
+  geom_smooth(data=synchrony_spp, aes(sqrt(Eucl_dist), qmean_synchrony), col='Goldenrod2' )+
+  geom_smooth(data=synchrony_spp %>% filter(flow_conn==1), aes(sqrt(dist_ntw), qmean_synchrony), col='#CD3F87') +
+  annotate("text", x=5, y=0.7, label="Flow-connected", col="#CD3F87", size=5 )+
+  annotate("text", x=5, y=0.75, label="Watercourse", col="#464BB4", size=5 )+
+  annotate("text", x=5, y=0.8, label="Euclidean", col="Goldenrod2", size=5 )+
+  ylab('Mean Q synchrony')+ xlab('Distance sqrt(km)')
+
+
+synchrony_spp %>% 
+  ggplot()+aes(sqrt(dist_ntw) , qmean_synchrony)+geom_smooth(method='lm')+
+  geom_smooth(data=synchrony_spp, aes(sqrt(Eucl_dist), qmean_synchrony), col='Goldenrod2', method='lm' )+
+  geom_smooth(data=synchrony_spp %>% filter(flow_conn==1), aes(sqrt(dist_ntw), qmean_synchrony), col='#CD3F87', method='lm') +
+  annotate("text", x=5, y=0.7, label="Flow-connected", col="#CD3F87", size=5 )+
+  annotate("text", x=5, y=0.75, label="Watercourse", col="#464BB4", size=5 )+
+  annotate("text", x=5, y=0.8, label="Euclidean", col="Goldenrod2", size=5 )+
+  ylab('Mean Q synchrony')+ xlab('Distance sqrt(km)')
+
+
+```
+
+# weak relation between synchrony in air T and synchrony in mean Q 
+# Q synchrony can take many negative values (not observed in the temp data)
+
+```{r}
+plot(synchrony_spp$qmean_synchrony~synchrony_spp$Tmean_synchrony)
+abline(a=0, b=1, col='red')
+```
+
+# *model with qmean synchrony shows no effect of streamflow on pop synchrony!*
+```{r}
+m1=lme(Correlation ~ dist_ntw + mean_pair_BC+ qmean_synchrony, random=~1|as.factor(basin_ID), 
+       data=synchrony_spp %>% select(basin_ID,Correlation, dist_ntw, mean_pair_BC, qmean_synchrony) %>% filter(complete.cases(.)))
+
+summary(m1)
+```
+
+
+#### Work on the QMAX data #####
+
+# Work on the *MAX streamflow data* - select years mathcin the biotic data
+```{r}
+#make it long
+qmax_long=
+qmax_av %>% 
+  pivot_longer(-1, names_to = 'year') 
+
+#remove the X in front of year
+qmax_long$year=
+  str_replace( qmax_long$year, 'X', '')
+ 
+# Join with the tableSites df
+qmax_long=
+qmax_long %>% 
+  left_join(TableSites[,c(1,2,3)], join_by(SiteID == sYNGEO_ID))
+
+#convert year to numeric
+qmax_long$year=as.numeric(qmax_long$year)
+
+
+# Selection of same time windows as for the bio data
+qmax_long=
+qmax_long %>% 
+  mutate(Sel=ifelse(year < begin  | year > end, 'NO', 'Yes'))
+
+qmax_long=
+  qmax_long %>% 
+  filter(Sel == 'Yes')
+
+```
+
+
+
+# Now add the Basin ID to the temp mean df
+```{r}
+qmax_long$BasinID=
+  TableSites$MAIN_BAS[match(qmax_long$SiteID, TableSites$sYNGEO_ID)]
+```
+
+
+# Nest within Basin to run synchrony across sites within basin 
+```{r}
+qmax_nest=
+qmax_long %>% 
+  group_by(BasinID) %>% nest()
+
+```
+
+
+# Run the function. *Get pairwise qmax synchrony across sites, within basin*
+```{r}
+qmax_nest=
+qmax_nest %>% 
+  mutate(qmax.synch= map(data, env.synch))
+
+qmax_nest$qmax.synch[[1]]
+```
+
+
+# Unlist the nested list, create the T mean synchonry long df
+```{r}
+qmax_synch=
+rbindlist(qmax_nest$qmax.synch)
+
+#add site pair info (to match with other synchrony pairwise data)
+qmax_synch$site_pair=
+  paste(qmax_synch$name1, qmax_synch$name2, sep="_")
+```
+
+
+
+## Add the mean Q (streamflow) synchrony to the *synchrony_spp data*
+```{r}
+#add the site pairs in both orders
+synchrony_spp$qmax_synchrony1=
+  qmax_synch$dis[match(synchrony_spp$sitepairs1, qmax_synch$site_pair)]
+
+synchrony_spp$qmax_synchrony2=
+  Tmean_synch$dis[match(synchrony_spp$sitepairs2, qmax_synch$site_pair)]
+
+# then combine the site pair orders to make sure each pairs are covered
+synchrony_spp$qmax_synchrony=
+ifelse(is.na(synchrony_spp$qmax_synchrony1), synchrony_spp$qmax_synchrony2, synchrony_spp$qmax_synchrony1)
+
+#remove the partial matches
+synchrony_spp$qmax_synchrony1=NULL
+synchrony_spp$qmax_synchrony2=NULL
+```
+
+#compare distribution of streamflow and temperature synchrony values
+```{r}
+synchrony_spp
+
+hist(synchrony_spp$qmax_synchrony)
+
+hist(synchrony_spp$Tmean_synchrony)
+```
+
+```{r}
+plot(synchrony_spp$qmean_synchrony~synchrony_spp$qmax_synchrony)
+abline(a=0, b=1, col='red')
+```
+
+```{r}
+synchrony_spp %>% 
+  ggplot()+aes(sqrt(dist_ntw) , qmax_synchrony)+geom_smooth()+
+  geom_smooth(data=synchrony_spp, aes(sqrt(Eucl_dist), qmax_synchrony), col='Goldenrod2' )+
+  geom_smooth(data=synchrony_spp %>% filter(flow_conn==1), aes(sqrt(dist_ntw), qmean_synchrony), col='#CD3F87') +
+  annotate("text", x=5, y=0.7, label="Flow-connected", col="#CD3F87", size=5 )+
+  annotate("text", x=5, y=0.75, label="Watercourse", col="#464BB4", size=5 )+
+  annotate("text", x=5, y=0.8, label="Euclidean", col="Goldenrod2", size=5 )+
+  ylab('Max Q synchrony')+ xlab('Distance sqrt(km)')
+
+
+synchrony_spp %>% 
+  ggplot()+aes(sqrt(dist_ntw) , qmax_synchrony)+geom_smooth(method='lm')+
+  geom_smooth(data=synchrony_spp, aes(sqrt(Eucl_dist), qmax_synchrony), col='Goldenrod2', method='lm' )+
+  geom_smooth(data=synchrony_spp %>% filter(flow_conn==1), aes(sqrt(dist_ntw), qmean_synchrony), col='#CD3F87', method='lm') +
+  annotate("text", x=5, y=0.7, label="Flow-connected", col="#CD3F87", size=5 )+
+  annotate("text", x=5, y=0.75, label="Watercourse", col="#464BB4", size=5 )+
+  annotate("text", x=5, y=0.8, label="Euclidean", col="Goldenrod2", size=5 )+
+  ylab('Max Q synchrony')+ xlab('Distance sqrt(km)')
+
+```
+
+
+
+
+```{r}
+m1=lme(Correlation ~ dist_ntw + mean_pair_BC+ qmax_synchrony, random=~1|as.factor(basin_ID), 
+       data=synchrony_spp %>% select(basin_ID,Correlation, dist_ntw, mean_pair_BC, qmax_synchrony) %>% filter(complete.cases(.)))
+
+summary(m1)
+```
+
+
+## Env distance 
+# can extract *env distance between sites, using strahler and elevation and mean T, and mean Q*
+
+#first get the mean site temperature
+```{r}
+mean_site_T=
+Sites_tmean_av_long %>% 
+  group_by(SiteID) %>% 
+  summarise (meanT=mean(value))
+```
+
+# get the mean discharge for each site 
+
+```{r}
+mean_site_Q=
+qmean_long %>% 
+  group_by(SiteID) %>% 
+  summarise(meanQ=mean(value))
+```
+
+
+# then extract the strahler and elevation
+```{r}
+names(synchrony_spp)
+names(TableSites)
+
+envdata=TableSites[,c(23,25)]
+
+rownames(envdata)=TableSites$sYNGEO_ID
+
+
+# add the mean air T on the env data 
+envdata$meanT=mean_site_T$meanT[match(rownames(envdata), mean_site_T$SiteID)]
+
+# add the mean streamflow (Q) on the env data 
+envdata$meanQ=mean_site_Q$meanQ[match(rownames(envdata), mean_site_Q$SiteID)]
+
+envdist=dist(envdata)
+
+
+# transform to three cols
+envdist_mat=iCAMP::dist.3col(envdist)
+
+head(envdist_mat)
+
+```
+
+```{r}
+envdist_mat$site_pair=paste(envdist_mat$name1, envdist_mat$name2, sep="_")
+```
+
+
+########################################
+# Now work on the *MultiMembership models*
+
+```{r}
+library(lmerMultiMember)
+
+```
+
+I think we need to unload this to make the mmglm work
+```{r}
+detach("package:lmerTest", unload = TRUE)
+```
+
+
+
+## running simple GLMM in multi-member context 
+# *first update the env.dist (that now include the mean Q of the sites)*
+```{r}
+synchrony_spp$env.dist<-
+  envdist_mat$dis[match(synchrony_spp$sitepairs1, envdist_mat$site_pair)]
+
+synchrony_spp$env.dist2<-
+  envdist_mat$dis[match(synchrony_spp$sitepairs2, envdist_mat$site_pair)]
+
+synchrony_spp$env.dist=
+  ifelse(is.na(synchrony_spp$env.dist), synchrony_spp$env.dist2, synchrony_spp$env.dist)
+
+sum(is.na(synchrony_spp$env.dist))
+
+synchrony_spp$env.dist2=NULL
+```
+
+
+# create df subset for multi-member model
+```{r}
+synchrony_spp_mmglm=synchrony_spp %>% 
+  select(Correlation, sYNGEO_ID1, sYNGEO_ID2, dist_ntw, mean_pair_BC, Tmean_synchrony, basin_ID, sitepairs1, sitepairs2, Species, env.dist) %>% 
+  filter(complete.cases(.))
+
+synchrony_spp_mmglm=synchrony_spp %>% 
+  select(Correlation, sYNGEO_ID1, sYNGEO_ID2, dist_ntw, mean_pair_BC, Tmean_synchrony, basin_ID, sitepairs1, sitepairs2, Species, env.dist, RaupCrick, Pod.repl, Pod.rich, FunPod.rich, FunPod.repl) %>% 
+  filter(complete.cases(.))
+```
+
+
+
+# run different Multi member models with all covariates and select best subset
+```{r}
+# the weights for basin_ID
+Wa <- lmerMultiMember::weights_from_vector(as.character(synchrony_spp_mmglm$basin_ID))
+
+#the weights for pairwise membership of sites
+Wx=lmerMultiMember::weights_from_columns(synchrony_spp_mmglm[,c(2,3)])
+
+# runing a model with all covariates (scaled), and checking results
+mmglm1=
+lmerMultiMember::lmer(Correlation~ scale(sqrt(dist_ntw)) + scale(Tmean_synchrony)+ scale(mean_pair_BC)+scale(env.dist) +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+
+
+
+summary(mmglm1)
+
+summary(mmglm1, ddf = "Satterthwaite")
+anova(mmglm1, ddf = "Satterthwaite")
+r2_nakagawa(mmglm1) 
+check_singularity(mmglm1)
+
+# mm model without env dist 
+ mmglm2=
+lmerMultiMember::lmer(Correlation~ scale(sqrt(dist_ntw)) + scale(Tmean_synchrony)+ scale(mean_pair_BC) +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+summary(mmglm2, ddf = "Satterthwaite")
+
+AIC(mmglm1, mmglm2)
+
+# mm model with only betadiv and netw dist (better supported)
+ mmglm3=
+lmerMultiMember::lmer(Correlation~ scale(sqrt(dist_ntw)) + scale(mean_pair_BC) +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+summary(mmglm3, ddf = "Satterthwaite")
+
+AIC(mmglm1, mmglm2, mmglm3)
+ 
+
+# mm model with interaction distance*betadiversity (even better)
+ mmglm4=
+lmerMultiMember::lmer(Correlation~ scale(sqrt(dist_ntw)) * scale(mean_pair_BC) +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+summary(mmglm4, ddf = "Satterthwaite")
+
+AIC(mmglm3, mmglm4)
+
+# model as before but not scaled and using directly a variable reporting sqrt of distance (useful for plotting later)
+
+synchrony_spp_mmglm$sqrt.dist_ntw=sqrt(synchrony_spp_mmglm$dist_ntw)
+
+ mmglm5=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * mean_pair_BC +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+summary(mmglm5, ddf = "Satterthwaite")
+ 
+# the Marginal effect remain small, with important contribution of the random components
+ r2_nakagawa(mmglm5) 
+ 
+ 
+# add the Tmean|_synchrony (moran) to test 
+  mmglm5b=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * mean_pair_BC + Tmean_synchrony+
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+  summary(mmglm5b, ddf = "Satterthwaite")
+   r2_nakagawa(mmglm5b)  
+ 
+  
+# model with interaction dist*bray-curtis + Moran is better supported   
+AIC(mmglm5, mmglm5b)  
+
+
+# add the env.dist as well - less supported
+  mmglm5c=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * mean_pair_BC + Tmean_synchrony+ env.dist+
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+AIC(mmglm5, mmglm5b, mmglm5c) 
+  
+  
+```
+# the null (random eff only) mm-model
+```{r}
+ mmglm_null=
+lmerMultiMember::lmer(Correlation~ 
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+```
+
+# likelyhood ratio test
+```{r}
+(AIC(mmglm_null)- AIC(mmglm5b))*log2(exp(1))
+
+anova(mmglm_null, mmglm5b)
+```
+
+# Significance of each term using car::Anova 
+```{r}
+install.packages('car')
+require(car)
+
+Anova(mmglm5b)
+```
+
+# plotting the best model (includes network distance and betadiversity), from model mmglm5b 
+```{r}
+
+sjPlot::plot_model(mmglm5b, type='pred', terms = c('sqrt.dist_ntw', 'mean_pair_BC'), axis.title = c('Watercourse distance (sqrt)','Population synchrony' ), title = '')+ scale_color_manual(values=c('tomato3', 'gold2', 'steelblue')) +scale_fill_manual(values=c('tomato3', 'gold2', 'steelblue'))+ylab('Population synchrony')
+
+```
+#*RaupCrick*
+# Now working on similar models, but using RaupCrick as betadiversity (independent from alpha diversity)
+
+# mmglm with Raup Crick
+```{r}
+
+# the weights for basin_ID
+Wa <- lmerMultiMember::weights_from_vector(as.character(synchrony_spp_mmglm$basin_ID))
+
+#the weights for pairwise membership of sites
+Wx=weights_from_columns(synchrony_spp_mmglm[,c(2,3)])
+
+
+ mmglm5_RC=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * RaupCrick +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+summary(mmglm5_RC, ddf = "Satterthwaite")
+
+r2_nakagawa(mmglm5_RC) 
+```
+# plot the mmglm with the RaupCrick betadiv
+```{r}
+sjPlot::plot_model(mmglm5_RC, type='pred', terms = c('sqrt.dist_ntw', 'RaupCrick'), axis.title = c('Watercourse distance (sqrt)','Population synchrony' ), title = '')+ scale_color_manual(values=c('tomato3', 'gold2', 'steelblue')) +scale_fill_manual(values=c('tomato3', 'gold2', 'steelblue'))+ylab('Population synchrony')
+```
+
+# mmglm model with *taxonimic replacement beta*
+```{r}
+ mmglm5_repl=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * Pod.repl +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+summary(mmglm5_repl, ddf = "Satterthwaite")
+r2_nakagawa(mmglm5_repl) 
+
+ mmglm5b_repl=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * Pod.repl + Tmean_synchrony+
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+summary(mmglm5b_repl, ddf = "Satterthwaite")
+
+AIC(mmglm5_repl, mmglm5b_repl)
+
+
+```
+
+# model with podani richness differences (nestedness component)
+```{r}
+ mmglm5_rich=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * Pod.rich +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+summary(mmglm5_rich, ddf = "Satterthwaite")
+r2_nakagawa(mmglm5_rich) 
+
+ mmglm5b_rich=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * Pod.rich + Tmean_synchrony+
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+AIC( mmglm5_rich,  mmglm5b_rich) 
+ 
+```
+
+# using the *Replacement component has more support for modelling synchrony*
+```{r}
+AIC(mmglm5_repl, mmglm5_rich)
+
+AIC(mmglm5b_repl, mmglm5b_rich)
+
+```
+
+
+###############
+
+### Add quantiles of betadiv (as done on previous models)
+This allows calculating model parameters for low vs high betadiversity groups of pairs
+```{r}
+library(gtools)
+
+synchrony_spp_mmglm$mean_pair_BC_Q3=
+  quantcut(synchrony_spp_mmglm$mean_pair_BC, q=3)
+
+levels(synchrony_spp_mmglm$mean_pair_BC_Q3)
+```
+
+
+# re create the multi-member model, just for the *low betadiv*
+*here multi-member interc =0.246*
+```{r}
+
+
+tmp1b=synchrony_spp_mmglm %>% filter(mean_pair_BC_Q3=='[0,0.456]') 
+
+# the weights for basin_ID
+Wa <- lmerMultiMember::weights_from_vector(as.character(tmp1b$basin_ID))
+
+#the weights for pairwise membership of sites
+Wx=weights_from_columns(tmp1b[,c(2,3)])
+
+
+test2=
+lmerMultiMember::lmer(Correlation~ sqrt(dist_ntw) + 
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=tmp1b)
+
+summary(test2)
+  
+```
+
+
+# multi member model for high betadiv
+# *Multi-member interc =0.135*
+```{r}
+tmp1b=synchrony_spp_mmglm %>% filter(mean_pair_BC_Q3=="(0.691,0.998]")
+
+# the weights for basin_ID
+Wa <- lmerMultiMember::weights_from_vector(as.character(tmp1b$basin_ID))
+
+#the weights for pairwise membership of sites
+Wx=weights_from_columns(tmp1b[,c(2,3)])
+
+
+test2=
+lmerMultiMember::lmer(Correlation~ sqrt(dist_ntw) + 
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=tmp1b)
+
+summary(test2)
+```
+
+
+# *difference in intercept (low-high beta) = 0.111*
+```{r}
+0.246 - 0.135
+```
+
+
+
+
+
+## *Working on setting up null-model to derive expected intercept for low vs high betadiversity*
+# Work setup again the permutation of the quantiles
+constrained permutation of betadivrsity quantiles WITHIN basins
+```{r}
+library(permute)
+h1_basins_mmglm<-how(within=Within(), blocks=synchrony_spp_mmglm$basin_ID)
+
+shuffle(synchrony_spp_mmglm$mean_pair_BC, control = h1_basins_mmglm)
+```
+
+
+# Function that shuffles beta quantiles within same basin - work on mmglm synchrony dataset
+```{r}
+shuffle_beta.fn<-function(x){
+  synchrony_spp_mmglm[shuffle(x, control=h1_basins),]$mean_pair_BC_Q3
+}
+
+shuffle_beta.fn<-function(x){
+  x[shuffle(x, control=h1_basins_mmglm),]$mean_pair_BC_Q3
+}
+
+shuffle_beta.fn(synchrony_spp_mmglm)
+```
+
+
+
+
+# create null model function (for intercept) to work with multi member models
+```{r}
+extr.null.int_mmglm<- function(xx){
+  xx$null.beta<-shuffle_beta.fn(xx) # assign the shuffled values of beta quantiles
+  
+  #create a tmp data for low betadiv values
+datalow=xx %>% filter(null.beta=='[0,0.456]')
+  
+  # the weights for basin_ID
+Wa_low <- lmerMultiMember::weights_from_vector(as.character(datalow$basin_ID))
+#the weights for pairwise membership of sites
+Wx_low=weights_from_columns(datalow[,c(2,3)])
+
+# the mmglm model for lowbeta
+low=lmerMultiMember::lmer(Correlation ~ sqrt(dist_ntw) + (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa_low, Pairs = Wx_low), REML = T, 
+            data=datalow )
+  
+###########
+# create a second tmp data for high betadiv values
+ datahigh=xx %>% filter(null.beta=="(0.691,0.998]")
+  
+  # the weights for basin_ID
+Wa_high <- lmerMultiMember::weights_from_vector(as.character(datahigh$basin_ID))
+#the weights for pairwise membership of sites
+Wx_high=weights_from_columns(datahigh[,c(2,3)])
+
+# the mmglm model for lowbeta
+high=lmerMultiMember::lmer(Correlation ~ sqrt(dist_ntw) + (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa_high, Pairs = Wx_high), REML = T, 
+            data=datahigh )
+
+    
+  final=  cbind.data.frame(lowBeta=low@beta[1], highBeta=high@beta[1])
+  
+  return(final)
+}
+```
+
+
+
+#test function
+```{r}
+extr.null.int_mmglm(synchrony_spp_mmglm)
+
+```
+
+```{r}
+tmp_null=replicate(20, extr.null.int_mmglm(synchrony_spp_mmglm))
+old.null.inter_BC_mmglm=null.inter_BC_mmglm
+```
+
+
+
+# Run the null model n times (to be increased)
+```{r}
+null.inter_BC_mmglm=replicate(300, extr.null.int_mmglm(synchrony_spp_mmglm))
+
+null.inter_BC_mmglm.df=data.frame(matrix(ncol=2, nrow = 300))
+for(i in 1:300) null.inter_BC_mmglm.df[i,]=null.inter_BC_mmglm[,,i]
+
+names(null.inter_BC_mmglm.df)=c('lowBeta', 'highBeta')
+
+null.inter_BC_mmglm.df$diff_intercept=null.inter_BC_mmglm.df$lowBeta - null.inter_BC_mmglm.df$highBeta
+colMeans(null.inter_BC_mmglm.df)
+
+```
+
+
+*observed diff in intercept = 0.111*
+
+# z-score of differences between intercept of synchrony decay for low vs high betadiversity
+```{r}
+(0.111 - mean(null.inter_BC_mmglm.df$diff_intercept)) /
+  sd(null.inter_BC_mmglm.df$diff_intercept)
+```
+
+
+# Plotting the mmglm based intercept from observed and null betadiv values
+```{r}
+lowbeta.plot_mmglm=
+null.inter_BC_mmglm.df %>% 
+  ggplot()+aes(y=lowBeta)+geom_density(fill='grey')+geom_segment(aes(x=0, y=0.246, xend=40, yend=0.246), col='tomato2', linewidth=1)+
+  #ylab('Low betadiversity - Model intercept')+
+  xlab(NULL)+ylab(NULL)+theme(axis.text.y = element_text(size=10), axis.text.x = element_blank())+
+  annotate('text', x=12, y = 0.21, label ='Null intercept', size=5)+
+  annotate('text', x=14, y =0.25, label = 'Observed intercept', size=4)
+
+
+highbeta.plot_mmglm=
+null.inter_BC_mmglm.df %>% 
+  ggplot()+aes(y=highBeta)+geom_density(fill='grey')+geom_segment(aes(x=0, y=0.135, xend=40, yend=0.135), col='steelblue', linewidth=1)+
+  xlab(NULL)+ylab(NULL)+theme(axis.text.y = element_text(size=10), axis.text.x = element_blank())+
+  annotate('text', x=15, y = 0.175, label ='Null intercept', size=5)+
+  annotate('text', x=16, y =0.145, label = 'Observed intercept', size=4)
+
+```
+
+
+
+# plotting the mmglm model with BC quantiles (as in null approach)
+```{r}
+
+# the weights for basin_ID
+Wa <- lmerMultiMember::weights_from_vector(as.character(synchrony_spp_mmglm$basin_ID))
+
+#the weights for pairwise membership of sites
+Wx=weights_from_columns(synchrony_spp_mmglm[,c(2,3)])
+
+
+ mmglm_qbc=
+lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * (mean_pair_BC_Q3) +
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+summary(mmglm_qbc, ddf = "Satterthwaite")
+
+
+plot_mmglm_BC_q=
+sjPlot::plot_model(mmglm_qbc, type='pred', terms = c('sqrt.dist_ntw', 'mean_pair_BC_Q3'), axis.title = c('Watercourse distance (sqrt)','Population synchrony' ), title = '') + scale_color_manual(values=c('tomato3', 'gold2', 'steelblue')) +scale_fill_manual(values=c('tomato3', 'gold2', 'steelblue'))+ylab('Population synchrony')+ labs(color='Bray-Curtis_Q')
+```
+
+
+# Model the null distribution and the observed intercept (from the models based on just the low  and high betadiversity)
+Also plot along the overall multimembership model with the three-factor quantiles of betadiversity as reference
+```{r fig.width=7.5}
+#install.packages('patchwork')
+#library(patchwork)
+
+plot( (lowbeta.plot_mmglm / highbeta.plot_mmglm) | plot_mmglm_BC_q, ncol=2)+plot_annotation(tag_levels = 'A')
+```
 
 
