@@ -5,13 +5,6 @@ date: "2024-06-03"
 ---
 
 
-git pasw
-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
-
-
-
-Include here the cleaned up versions of the different scripts, following the paper in preparation
-..
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, fig.width = 5)
