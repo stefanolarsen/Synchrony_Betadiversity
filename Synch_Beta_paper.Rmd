@@ -4,6 +4,12 @@ output: html_document
 date: "2024-06-03"
 ---
 
+
+git pasw
+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
+
+
+
 Include here the cleaned up versions of the different scripts, following the paper in preparation
 ..
 
@@ -38,6 +44,8 @@ library(readr)
 
 install.packages('nlstools')
 library(nlstools)
+
+library(nlme)
 
 
 
@@ -483,6 +491,7 @@ abline(a=0, b=1, col='red')
 ```
 
 # *model with qmean synchrony shows no effect of streamflow on pop synchrony!*
+Streamflow not as Moran driver
 ```{r}
 m1=lme(Correlation ~ dist_ntw + mean_pair_BC+ qmean_synchrony, random=~1|as.factor(basin_ID), 
        data=synchrony_spp %>% select(basin_ID,Correlation, dist_ntw, mean_pair_BC, qmean_synchrony) %>% filter(complete.cases(.)))
@@ -620,7 +629,7 @@ synchrony_spp %>%
 
 
 
-
+# Again, streamflow Max not seems to influence biotic synchrony
 ```{r}
 m1=lme(Correlation ~ dist_ntw + mean_pair_BC+ qmax_synchrony, random=~1|as.factor(basin_ID), 
        data=synchrony_spp %>% select(basin_ID,Correlation, dist_ntw, mean_pair_BC, qmax_synchrony) %>% filter(complete.cases(.)))
@@ -683,10 +692,11 @@ envdist_mat$site_pair=paste(envdist_mat$name1, envdist_mat$name2, sep="_")
 
 ########################################
 # Now work on the *MultiMembership models*
+########################################
 
 ```{r}
 library(lmerMultiMember)
-
+library(sjPlot) #for plotting lmer and glmer mods
 ```
 
 I think we need to unload this to make the mmglm work
@@ -779,8 +789,24 @@ summary(mmglm4, ddf = "Satterthwaite")
 
 AIC(mmglm3, mmglm4)
 
-# model as before but not scaled and using directly a variable reporting sqrt of distance (useful for plotting later)
+# mm model as before but including the Moran T
 
+synchrony_spp_mmglm$sqrt.dist_ntw=sqrt(synchrony_spp_mmglm$dist_ntw)
+
+ mmglm4b=
+lmerMultiMember::lmer(Correlation~ scale(sqrt.dist_ntw) * scale(mean_pair_BC) + scale(Tmean_synchrony)+
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+summary(mmglm4b, ddf = "Satterthwaite")
+Anova(mmglm4b)
+
+
+ r2_nakagawa(mmglm4b) 
+
+```
+ #NON SCALED
+# model as before but not scaled and using directly a variable reporting sqrt of distance (useful for plotting later)
+```{r}
 synchrony_spp_mmglm$sqrt.dist_ntw=sqrt(synchrony_spp_mmglm$dist_ntw)
 
  mmglm5=
@@ -802,7 +828,7 @@ lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * mean_pair_BC + Tmean_synchron
 
   summary(mmglm5b, ddf = "Satterthwaite")
    r2_nakagawa(mmglm5b)  
- 
+ anova(mmglm5b)
   
 # model with interaction dist*bray-curtis + Moran is better supported   
 AIC(mmglm5, mmglm5b)  
@@ -816,14 +842,25 @@ lmerMultiMember::lmer(Correlation~ sqrt.dist_ntw * mean_pair_BC + Tmean_synchron
 
 AIC(mmglm5, mmglm5b, mmglm5c) 
   
+class(mmglm5b)
   
 ```
+
+#The scaled version of mm model is slighly less supported (?)
+```{r}
+AIC(mmglm4b, mmglm5b)
+```
+
+
+
 # the null (random eff only) mm-model
 ```{r}
  mmglm_null=
 lmerMultiMember::lmer(Correlation~ 
               (1 | basin_ID) + (1|Species) + (1 | Pairs),
             memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=synchrony_spp_mmglm)
+
+r2_nakagawa(mmglm_null)  
 ```
 
 # likelyhood ratio test
@@ -842,11 +879,28 @@ Anova(mmglm5b)
 ```
 
 # plotting the best model (includes network distance and betadiversity), from model mmglm5b 
+# ploting the 5ht, 50, and 90th percentile of betadiversity
+# *Fig. 2* ##
+```{r fig.width=4.5, fig.height=3.5}
+sjPlot::plot_model(mmglm5b, type='pred', terms = c('sqrt.dist_ntw', 'mean_pair_BC[0.1900452, 0.5661769, 0.9306729]'), axis.title = c('Watercourse distance (sqrt)','Population synchrony' ), title = '')+ scale_color_manual(values=c('tomato3', 'gold2', 'steelblue'),labels=c('5th', '50th', '90th')) +scale_fill_manual(values=c('tomato3', 'gold2', 'steelblue'))+ylab('Population synchrony')+labs(col='Beta-diversity\npercentile')+
+  theme(legend.position =  c(0.84, 0.72))+theme(axis.title = element_text(size=14))
+
+
+
+
+```
+
+
 ```{r}
 
 sjPlot::plot_model(mmglm5b, type='pred', terms = c('sqrt.dist_ntw', 'mean_pair_BC'), axis.title = c('Watercourse distance (sqrt)','Population synchrony' ), title = '')+ scale_color_manual(values=c('tomato3', 'gold2', 'steelblue')) +scale_fill_manual(values=c('tomato3', 'gold2', 'steelblue'))+ylab('Population synchrony')
 
+sjPlot::plot_model(mmglm4b, type='pred', terms = c('sqrt.dist_ntw', 'mean_pair_BC'), axis.title = c('Watercourse distance (sqrt)','Population synchrony' ), title = '')+ scale_color_manual(values=c('tomato3', 'gold2', 'steelblue')) +scale_fill_manual(values=c('tomato3', 'gold2', 'steelblue'))+ylab('Population synchrony')
+
+
 ```
+
+
 #*RaupCrick*
 # Now working on similar models, but using RaupCrick as betadiversity (independent from alpha diversity)
 
@@ -874,6 +928,7 @@ r2_nakagawa(mmglm5_RC)
 sjPlot::plot_model(mmglm5_RC, type='pred', terms = c('sqrt.dist_ntw', 'RaupCrick'), axis.title = c('Watercourse distance (sqrt)','Population synchrony' ), title = '')+ scale_color_manual(values=c('tomato3', 'gold2', 'steelblue')) +scale_fill_manual(values=c('tomato3', 'gold2', 'steelblue'))+ylab('Population synchrony')
 ```
 
+#*Podani replacement and richness decomposition*
 # mmglm model with *taxonimic replacement beta*
 ```{r}
  mmglm5_repl=
@@ -920,7 +975,35 @@ AIC(mmglm5_repl, mmglm5_rich)
 
 AIC(mmglm5b_repl, mmglm5b_rich)
 
+
+Anova(mmglm5b_repl)
+Anova(mmglm5b_rich)
+
+r2_nakagawa(mmglm5_repl)
+r2_nakagawa(mmglm5_rich)
+
+r2_nakagawa(mmglm5b_repl)
+r2_nakagawa(mmglm5b_rich)
+
 ```
+
+
+# Plot the decay of synchrony with richness-difference and replacement comp. of beta-diversity
+# *Fig.S1*
+
+```{r}
+synchrony_spp %>% 
+  select(Pod.repl, Correlation, Origin) %>% 
+  filter(complete.cases(.)) %>% 
+    #filter(Origin !='Sweden') %>% 
+  ggplot()+aes(Pod.repl , Correlation)+geom_smooth(method='lm')+xlab('Podani_beta')+ylab('Population synchrony')+
+  geom_smooth(data=synchrony_spp, aes(Pod.rich, Correlation), method = 'lm', col='darkred')+xlab('Beta-diversity')+
+    annotate('text', x=0.75, y=0.14, label='Richness diff.', col='darkred')+
+    annotate('text', x=0.75, y=0.12, label='Replacement', col='blue')+
+  theme(axis.title = element_text(size=14))
+```
+
+
 
 
 ###############
@@ -961,7 +1044,7 @@ summary(test2)
 ```
 
 
-# multi member model for high betadiv
+# multi member model for *high betadiv*
 # *Multi-member interc =0.135*
 ```{r}
 tmp1b=synchrony_spp_mmglm %>% filter(mean_pair_BC_Q3=="(0.691,0.998]")
@@ -1004,9 +1087,9 @@ shuffle(synchrony_spp_mmglm$mean_pair_BC, control = h1_basins_mmglm)
 
 # Function that shuffles beta quantiles within same basin - work on mmglm synchrony dataset
 ```{r}
-shuffle_beta.fn<-function(x){
-  synchrony_spp_mmglm[shuffle(x, control=h1_basins),]$mean_pair_BC_Q3
-}
+#shuffle_beta.fn<-function(x){
+#  synchrony_spp_mmglm[shuffle(x, control=h1_basins),]$mean_pair_BC_Q3
+#}
 
 shuffle_beta.fn<-function(x){
   x[shuffle(x, control=h1_basins_mmglm),]$mean_pair_BC_Q3
@@ -1074,10 +1157,10 @@ old.null.inter_BC_mmglm=null.inter_BC_mmglm
 
 # Run the null model n times (to be increased)
 ```{r}
-null.inter_BC_mmglm=replicate(300, extr.null.int_mmglm(synchrony_spp_mmglm))
+null.inter_BC_mmglm=replicate(500, extr.null.int_mmglm(synchrony_spp_mmglm))
 
-null.inter_BC_mmglm.df=data.frame(matrix(ncol=2, nrow = 300))
-for(i in 1:300) null.inter_BC_mmglm.df[i,]=null.inter_BC_mmglm[,,i]
+null.inter_BC_mmglm.df=data.frame(matrix(ncol=2, nrow = 500))
+for(i in 1:500) null.inter_BC_mmglm.df[i,]=null.inter_BC_mmglm[,,i]
 
 names(null.inter_BC_mmglm.df)=c('lowBeta', 'highBeta')
 
@@ -1094,6 +1177,19 @@ colMeans(null.inter_BC_mmglm.df)
 (0.111 - mean(null.inter_BC_mmglm.df$diff_intercept)) /
   sd(null.inter_BC_mmglm.df$diff_intercept)
 ```
+
+# z-score for high betadiversity intercept
+```{r}
+(0.135 - mean(null.inter_BC_mmglm.df$highBeta)) /
+  sd (null.inter_BC_mmglm.df$highBeta)
+```
+
+# z-score for low betadiversity intercept
+```{r}
+(0.246 - mean(null.inter_BC_mmglm.df$lowBeta))/
+  sd(null.inter_BC_mmglm.df$lowBeta)
+```
+
 
 
 # Plotting the mmglm based intercept from observed and null betadiv values
@@ -1144,9 +1240,257 @@ sjPlot::plot_model(mmglm_qbc, type='pred', terms = c('sqrt.dist_ntw', 'mean_pair
 Also plot along the overall multimembership model with the three-factor quantiles of betadiversity as reference
 ```{r fig.width=7.5}
 #install.packages('patchwork')
-#library(patchwork)
+library(patchwork)
 
 plot( (lowbeta.plot_mmglm / highbeta.plot_mmglm) | plot_mmglm_BC_q, ncol=2)+plot_annotation(tag_levels = 'A')
+```
+
+
+
+```{r}
+
+plot_null_low=
+null.inter_BC_mmglm.df %>% 
+  ggplot()+aes(y=lowBeta)+geom_density(fill='grey')+geom_segment(aes(x=0, y=0.246, xend=40, yend=0.246), col='tomato2', linewidth=1)+
+  xlab(NULL)+ylab(NULL)+theme(axis.text.y = element_text(size=10), axis.text.x = element_blank())+
+  ylim(c(0.13, 0.25))+
+  annotate('text', x=12, y = 0.21, label ='Null distribution', size=5)+
+  annotate('text', x=19.5, y =0.250, label = 'Observed - low beta-diversity', size=4.5)+ylab('Synchrony-decay intercept')+
+  theme(axis.title.y = element_text(size=15))
+
+
+plot_null_high=
+null.inter_BC_mmglm.df %>% 
+  ggplot()+aes(y=highBeta)+geom_density(fill='grey')+geom_segment(aes(x=0, y=0.135, xend=40, yend=0.135), col='steelblue', linewidth=1)+
+  xlab(NULL)+ylab(NULL)+theme(axis.text.y = element_text(size=10), axis.text.x = element_blank())+
+  ylim(c(0.13, 0.25))+
+  annotate('text', x=13, y = 0.175, label ='Null distribution', size=5)+
+  annotate('text', x=19.6, y =0.14, label = 'Observed - high beta-diversity', size=4.5)+ylab(NULL)+
+  theme(axis.title.y = element_text(size=15))
+```
+
+# *Fig 4 - Null intercepts*
+```{r fig.width=7, fig.height=3.5}
+plot_null_low | plot_null_high
+```
+
+
+
+
+##################
+# work on the SEM 
+##################
+
+Synch beta clean script has entire SEM stuff
+
+
+
+```{r}
+install.packages('piecewiseSEM')
+library(piecewiseSEM)
+library(nlme)
+```
+
+```{r}
+
+synchrony_spp_mmglm$synchrony=synchrony_spp_mmglm$Correlation
+synchrony_spp_mmglm$Moran_T=synchrony_spp_mmglm$Tmean_synchrony
+
+#names(synchrony_spp_mmglm)[1]='synchrony'
+#names(synchrony_spp_mmglm)[6]='Moran_T'
+#rename this variable to follow SEM script from other (previous) session
+synchrony_spp_mmglm$env_dis=synchrony_spp_mmglm$env.dist
+```
+
+
+## Run the piecewiseSEM with the env distance as additional exogenous var and the betadiv as direct effect on synchrony
+```{r}
+psem1<-
+  psem(
+    lme(synchrony~ dist_ntw + Moran_T+ mean_pair_BC, random=~1|basin_ID, data=synchrony_spp_mmglm),
+    lme(mean_pair_BC ~ dist_ntw + env_dis, random=~1|basin_ID, data=synchrony_spp_mmglm),
+    data=synchrony_spp_mmglm
+    
+  )
+```
+
+
+
+# look at direct separation test. *betadiversity linked to Moran!*
+```{r}
+basisSet(psem1)
+dSep(psem1)
+```
+#Update SEM to include betadiversity influenced by Moran
+```{r}
+psem2<-
+  update(psem1,
+      mean_pair_BC ~ dist_ntw + env_dis+Moran_T
+  )
+```
+
+```{r}
+dSep(psem2)
+
+coefs(psem2)
+rsquared(psem2)
+
+plot(psem2)
+```
+
+
+# inclusion of link between betadiversity and Moran is justified
+```{r}
+AIC(psem1, psem2)
+```
+
+# must include a random effect for species as well
+```{r}
+
+psem_spp<-
+  psem(
+    lme(synchrony~ (dist_ntw) + Moran_T+ mean_pair_BC, random=list(basin_ID=~1, Species=~1), data=synchrony_spp_mmglm, control=lmeControl(opt = "optim")),
+    lme(mean_pair_BC ~ (dist_ntw) + env.dist+ Moran_T, random=~1|basin_ID, data=synchrony_spp_mmglm, control=lmeControl(opt = "optim")),
+    data=synchrony_spp_mmglm)
+
+# including square root transformation of distance (as in Ecology Letter models)
+psem_spp3<-
+  psem(
+    lme(synchrony~ sqrt(dist_ntw) + Moran_T+ mean_pair_BC, random=list(basin_ID=~1, Species=~1), data=synchrony_spp_mmglm, control=lmeControl(opt = "optim")),
+    lme(mean_pair_BC ~ sqrt(dist_ntw) + env.dist+ Moran_T, random=~1|basin_ID, data=synchrony_spp_mmglm, control=lmeControl(opt = "optim")),
+    data=synchrony_spp_mmglm)
+```
+
+```{r}
+AIC(psem_spp, psem_spp3)
+```
+
+# Psem_spp3 seems better supported than psem_spp1, for the inlcusion of sqrt(dist_ntw), and the *global fisher test is NON sig. as it should *
+```{r}
+summary(psem_spp3)
+
+dSep(psem_spp3)
+```
+
+# Plotting the most supported SEM
+```{r}
+plot(psem_spp3, node_attrs = list(size=2))
+```
+
+# Plot residual synchrony vs betadiv for psem_spp3
+```{r}
+resid_psem3.spp=
+partialResid(synchrony ~ mean_pair_BC, psem_spp3)
+```
+
+# *Fig 4 residual*
+```{r fig.width=5, fig.height=4}
+pdf('plot.resid.pdf', w=5, h=4)
+resid_psem3.spp %>% 
+ggplot()+aes(xresid, yresid)+geom_smooth(col='black', size=2)+xlab('Residual beta-diversity')+ylab('Residual synchrony')+theme_classic()+
+  theme(axis.title = element_text(size=22), axis.text = element_text(size=14))
+dev.off()
+```
+
+
+
+
+# As SEM do not support multimbmbership random model, we test the individual paths separately in multi-member framwork.
+```{r}
+
+# create temporary data
+tmp1=synchrony_spp %>% 
+  select(Correlation, sYNGEO_ID1, sYNGEO_ID2, dist_ntw, mean_pair_BC, Tmean_synchrony, basin_ID, sitepairs1, sitepairs2, Species, env.dist) %>% 
+  filter(complete.cases(.))
+
+# the weights for basin_ID
+Wa <- lmerMultiMember::weights_from_vector(as.character(tmp1$basin_ID))
+
+#the weights for pairwise membership of sites
+Wx=weights_from_columns(tmp1[,c(2,3)])
+
+# no interaction needed here, as pairwise site are not nested or appearing in more than one basin
+#Wax=interaction_weights(Wa, Wx)
+
+```
+
+# test the multimember models, here using the same model structure as in the SEM
+
+Must deload the lmerTest. This issue need checking
+```{r}
+
+detach("package:lmerTest", unload = TRUE)
+detach("package:lmerMultiMember", unload = TRUE)
+library(lmerTest)
+library(lmerMultiMember)
+
+```
+
+
+```{r}
+
+test1= lmerMultiMember::lmer(Correlation~ sqrt(dist_ntw) + Tmean_synchrony+ mean_pair_BC+ 
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=tmp1)
+
+
+test2= lmerMultiMember::lmer(mean_pair_BC~ sqrt(dist_ntw) + Tmean_synchrony+ env.dist+ 
+              (1 | basin_ID) + (1|Species) + (1 | Pairs),
+            memberships = list(basin_ID = Wa, Pairs = Wx), REML = T, data=tmp1)
+
+
+summary(test1, ddf = "Satterthwaite")
+r2_nakagawa(test1)
+summary(test2)
+```
+```{r}
+class(test1)<-"lmerModLmerTest"
+```
+
+```{r}
+plot(test1)
+```
+
+
+```{r}
+plot(wangs_basins$CV_C_R ~ wangs_basins$mean_bray)
+plot(wangs_basins$CV_S_L ~ wangs_basins$mean_bray)
+plot(wangs_basins$CV_C_L ~ wangs_basins$mean_bray)
+plot(wangs_basins$CV_S_R ~ wangs_basins$mean_bray)
+
+plot(wangs_basins$CV_C_R ~ wangs_basins$resdi_Ed.Wd.ratio)
+plot(wangs_basins$CV_C_R ~ wangs_basins$gamma.shannon)
+plot(wangs_basins$phi_S2C_R ~ wangs_basins$gamma.shannon)
+plot(wangs_basins$phi_S2C_R ~ wangs_basins$mean_bray)
+plot(wangs_basins$phi_S2C_L ~ wangs_basins$mean_bray)
+plot(wangs_basins$phi_S_L2R~ wangs_basins$mean_bray)
+plot(wangs_basins$phi_C_L2R ~ wangs_basins$mean_bray)
+plot(wangs_basins$phi_C_L2R ~ wangs_basins$gamma.rich)
+```
+
+
+```{r}
+names(basins_grp_tbl)
+
+
+```
+
+```{r}
+tmp=
+  basins_grp_tbl %>% 
+  select(basinID, mean.bray)
+
+tmp$mean.bray_unlist=
+  unlist(tmp$mean.bray)
+
+tmp$mean.bray=NULL
+
+write.csv(tmp, file='basin_mean_bray.csv')
+```
+
+
+```{r}
+synchrony_spp %>% filter(is.na(mean_pair_BC))
 ```
 
 
